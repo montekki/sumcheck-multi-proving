@@ -1,0 +1,63 @@
+---
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-03-25
+          targets: riscv32im-unknown-none-elf
+          components: rust-src, rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run cargo check
+        run: cargo check --all-targets --all-features
+
+      - name: Run cargo clippy
+        run: cargo clippy --all-targets --all-features
+        # Note: Add '-- -D warnings' to the above command to fail on warnings
+
+      - name: Run cargo build
+        run: cargo build --all-targets --all-features
+
+      - name: Run tests
+        run: cargo test --all-features

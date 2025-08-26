@@ -11,3 +11,16 @@ however, as long as the two protocols have values that remain within the base fi
 [2025-08-26T13:46:13Z INFO  sumcheck_multi_proving] ceno proof [[863475a602c2ef45, 9d7c9b52e56be055, 66638a60ee666b88, 474ebc91b813ba9d], [0, 0, 0, 0]]
 
 ```
+
+## CI/CD
+
+This repository includes a GitHub Actions workflow (`.github/workflows/rust-ci.yml`) that automatically:
+
+- Builds the Rust code using the specified nightly toolchain
+- Checks code formatting with `rustfmt`
+- Runs `cargo check` for compilation verification
+- Runs `cargo clippy` for linting (shows warnings but doesn't fail the build)
+- Runs `cargo build` for full compilation
+- Runs `cargo test` for test execution
+
+The CI runs on pushes and pull requests to the main branch, and can also be triggered manually.
