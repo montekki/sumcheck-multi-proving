@@ -21,10 +21,11 @@ use merlin::Transcript;
 use multilinear_extensions::mle::MultilinearExtension;
 use multilinear_extensions::monomial::Term;
 use multilinear_extensions::virtual_polys::VirtualPolynomials;
-use p3::field::FieldAlgebra;
+use p3::field::{ExtensionField as _, FieldAlgebra};
 use p3::goldilocks::Goldilocks;
 
-const SAMPLES: usize = 4;
+const NUM_VARS: usize = 2;
+const SAMPLES: usize = NUM_VARS.pow(2);
 
 const START_SUMCHECK: &[u8] = b"Internal round";
 const ROUND_POLY: &[u8] = b"Internal round";
@@ -99,7 +100,7 @@ fn icicle_slice_to_ceno(slice: &[ScalarField]) -> MultilinearExtension<'static, 
         .map(goldilocks_from_ceno_to_icicle)
         .collect();
 
-    MultilinearExtension::from_evaluation_vec_smart(2, converted_evals)
+    MultilinearExtension::from_evaluation_vec_smart(NUM_VARS, converted_evals)
 }
 
 fn goldilocks_from_ceno_to_icicle(element: ScalarField) -> Goldilocks {
@@ -126,14 +127,14 @@ fn run_ceno_sumcheck(
     poly_b: MultilinearExtension<GoldilocksExt2>,
     poly_c: MultilinearExtension<GoldilocksExt2>,
     poly_e: MultilinearExtension<GoldilocksExt2>,
-) -> Vec<Vec<GoldilocksExt2>> {
+) -> Vec<Vec<Goldilocks>> {
     let poly1 = vec![poly_a, poly_b, poly_e.clone()];
 
     let poly2 = vec![poly_c, poly_e];
     let mut prover_transcript = CenoTranscript::new(b"my_sumcheck");
     let virtual_poly_v2 = VirtualPolynomials::new_from_monimials(
-        2, // threads
-        2, // vars
+        2,        // threads
+        NUM_VARS, // vars
         vec![
             Term {
                 scalar: Either::Right(GoldilocksExt2::ONE),
@@ -147,7 +148,17 @@ fn run_ceno_sumcheck(
     );
     let (sumcheck_proof, _state) = IOPProverState::prove(virtual_poly_v2, &mut prover_transcript);
 
-    info!("ceno proof {sumcheck_proof:?}");
+    let sumcheck_proof: Vec<Vec<Goldilocks>> = sumcheck_proof
+        .proofs
+        .into_iter()
+        .map(|v| {
+            v.evaluations
+                .into_iter()
+                .map(|e| e.as_base().unwrap_or_default())
+                .collect()
+        })
+        .collect();
+    info!("ceno proof {sumcheck_proof:x?}");
 
     vec![]
 }
