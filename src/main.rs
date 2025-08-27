@@ -3,7 +3,6 @@ use std::time::Instant;
 use ceno_sumcheck::structs::IOPProverState;
 use ceno_transcript::BasicTranscript as CenoTranscript;
 use either::Either;
-use icicle_goldilocks::field::ExtensionField;
 use itertools::Itertools;
 use log::info;
 
@@ -15,7 +14,7 @@ use icicle_core::{
     sumcheck::{Sumcheck, SumcheckConfig, SumcheckProofOps, SumcheckTranscriptConfig},
     traits::GenerateRandom,
 };
-use icicle_goldilocks::{field::ScalarField, sumcheck::ScalarSumcheckProof};
+use icicle_goldilocks::{field::ExtensionField, sumcheck::ExtensionSumcheckProof};
 use icicle_runtime::memory::HostSlice;
 use merlin::Transcript;
 use multilinear_extensions::mle::MultilinearExtension;
@@ -52,22 +51,26 @@ where
     }
 }
 
-fn verify_proof(proof: ScalarSumcheckProof, claimed_sum: ScalarField) {
+fn verify_proof(proof: ExtensionSumcheckProof, claimed_sum: ExtensionField) {
     let mut verifier_previous_transcript = Transcript::new(b"my_sumcheck");
-    <Transcript as TranscriptProtocol<ScalarField>>::append_data(
+    <Transcript as TranscriptProtocol<ExtensionField>>::append_data(
         &mut verifier_previous_transcript,
         b"public",
         &claimed_sum,
     );
     //get seed based on previous state
-    let verifier_seed_rng = <Transcript as TranscriptProtocol<ScalarField>>::challenge_scalar(
+    let verifier_seed_rng = <Transcript as TranscriptProtocol<ExtensionField>>::challenge_scalar(
         &mut verifier_previous_transcript,
         b"seeded",
     );
 
     //define verifier FS config
-    let leaf_size = (ScalarField::one()).to_bytes_le().len().try_into().unwrap();
-    let hasher = icicle_core::poseidon2::Poseidon2::new::<ScalarField>(leaf_size, None).unwrap();
+    let leaf_size = (ExtensionField::one())
+        .to_bytes_le()
+        .len()
+        .try_into()
+        .unwrap();
+    let hasher = icicle_core::poseidon2::Poseidon2::new::<ExtensionField>(leaf_size, None).unwrap();
     let verifier_transcript_config = SumcheckTranscriptConfig::new(
         &hasher,
         START_SUMCHECK.to_vec(),
@@ -77,7 +80,8 @@ fn verify_proof(proof: ScalarSumcheckProof, claimed_sum: ScalarField) {
         verifier_seed_rng,
     );
 
-    let sumcheck = <icicle_goldilocks::sumcheck::ScalarSumcheckWrapper as Sumcheck>::new().unwrap();
+    let sumcheck =
+        <icicle_goldilocks::sumcheck::ExtensionSumcheckWrapper as Sumcheck>::new().unwrap();
     let proof_validty = sumcheck.verify(&proof, claimed_sum, &verifier_transcript_config);
 
     match proof_validty {
@@ -93,7 +97,7 @@ fn verify_proof(proof: ScalarSumcheckProof, claimed_sum: ScalarField) {
     }
 }
 
-fn icicle_slice_to_ceno(slice: &[ScalarField]) -> MultilinearExtension<'static, GoldilocksExt2> {
+fn icicle_slice_to_ceno(slice: &[ExtensionField]) -> MultilinearExtension<'static, GoldilocksExt2> {
     let converted_evals: Vec<_> = slice
         .iter()
         .copied()
@@ -103,7 +107,7 @@ fn icicle_slice_to_ceno(slice: &[ScalarField]) -> MultilinearExtension<'static, 
     MultilinearExtension::from_evaluation_vec_smart(NUM_VARS, converted_evals)
 }
 
-fn goldilocks_from_ceno_to_icicle(element: ScalarField) -> Goldilocks {
+fn goldilocks_from_ceno_to_icicle(element: ExtensionField) -> Goldilocks {
     Goldilocks::from_canonical_u64(u64::from_le_bytes(
         element.to_bytes_le().try_into().unwrap(),
     ))
@@ -114,7 +118,7 @@ fn goldilocks_from_cen_to_icicle_ext(element: ExtensionField) -> GoldilocksExt2 
     let limbs: [Goldilocks; 2] = element
         .limbs()
         .iter()
-        .map(|limb| goldilocks_from_ceno_to_icicle(ScalarField::from_u32(*limb)))
+        .map(|limb| goldilocks_from_ceno_to_icicle(ExtensionField::from_u32(*limb)))
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
@@ -164,11 +168,11 @@ fn run_ceno_sumcheck(
 }
 
 fn run_icicle_sumcheck(
-    poly_a: Vec<ScalarField>,
-    poly_b: Vec<ScalarField>,
-    poly_c: Vec<ScalarField>,
-    poly_e: Vec<ScalarField>,
-) -> Vec<Vec<ScalarField>> {
+    poly_a: Vec<ExtensionField>,
+    poly_b: Vec<ExtensionField>,
+    poly_c: Vec<ExtensionField>,
+    poly_e: Vec<ExtensionField>,
+) -> Vec<Vec<ExtensionField>> {
     //simulate previous state
     let mut prover_previous_transcript = Transcript::new(b"my_sumcheck");
 
@@ -183,37 +187,42 @@ fn run_icicle_sumcheck(
         .map(|(((a, b), c), e)| *a * *b * *e - *c * *e)
         .collect();
 
-    let claimed_sum = temp.iter().fold(ScalarField::zero(), |acc, &a| acc + a);
+    let claimed_sum = temp.iter().fold(ExtensionField::zero(), |acc, &a| acc + a);
     info!(
         "Compute claimed sum time {:?}, sum {claimed_sum}",
         compute_sum_time.elapsed()
     );
 
     //add claimed sum to transcript to simulate previous state
-    <Transcript as TranscriptProtocol<ScalarField>>::append_data(
+    <Transcript as TranscriptProtocol<ExtensionField>>::append_data(
         &mut prover_previous_transcript,
         b"public",
         &claimed_sum,
     );
     //get seed based on previous state
-    let seed_rng = <Transcript as TranscriptProtocol<ScalarField>>::challenge_scalar(
+    let seed_rng = <Transcript as TranscriptProtocol<ExtensionField>>::challenge_scalar(
         &mut prover_previous_transcript,
         b"seeded",
     );
 
-    let leaf_size = (ScalarField::one()).to_bytes_le().len().try_into().unwrap();
-    let hasher = icicle_core::poseidon2::Poseidon2::new::<ScalarField>(leaf_size, None).unwrap();
+    let leaf_size = (ExtensionField::one())
+        .to_bytes_le()
+        .len()
+        .try_into()
+        .unwrap();
+    let hasher = icicle_core::poseidon2::Poseidon2::new::<ExtensionField>(leaf_size, None).unwrap();
 
     //define sumcheck config
     let sumcheck_config = SumcheckConfig::default();
 
     let mle_poly_hosts = vec![
-        HostSlice::<ScalarField>::from_slice(&poly_a),
-        HostSlice::<ScalarField>::from_slice(&poly_b),
-        HostSlice::<ScalarField>::from_slice(&poly_c),
-        HostSlice::<ScalarField>::from_slice(&poly_e),
+        HostSlice::<ExtensionField>::from_slice(&poly_a),
+        HostSlice::<ExtensionField>::from_slice(&poly_b),
+        HostSlice::<ExtensionField>::from_slice(&poly_c),
+        HostSlice::<ExtensionField>::from_slice(&poly_e),
     ];
-    let sumcheck = <icicle_goldilocks::sumcheck::ScalarSumcheckWrapper as Sumcheck>::new().unwrap();
+    let sumcheck =
+        <icicle_goldilocks::sumcheck::ExtensionSumcheckWrapper as Sumcheck>::new().unwrap();
 
     let transcript_config = SumcheckTranscriptConfig::new(
         &hasher,
@@ -251,10 +260,10 @@ fn run_icicle_sumcheck(
 
 fn main() {
     env_logger::init();
-    let poly_a = ScalarField::generate_random(SAMPLES);
-    let poly_b = ScalarField::generate_random(SAMPLES);
-    let poly_c = ScalarField::generate_random(SAMPLES);
-    let poly_e = ScalarField::generate_random(SAMPLES);
+    let poly_a = ExtensionField::generate_random(SAMPLES);
+    let poly_b = ExtensionField::generate_random(SAMPLES);
+    let poly_c = ExtensionField::generate_random(SAMPLES);
+    let poly_e = ExtensionField::generate_random(SAMPLES);
 
     let poly_a_a = icicle_slice_to_ceno(&poly_a);
     let poly_b_b = icicle_slice_to_ceno(&poly_b);
